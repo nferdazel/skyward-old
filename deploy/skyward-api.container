@@ -1,0 +1,47 @@
+# Quadlet unit — skyward API (Go), rootless podman + systemd user.
+# Pasang di VPS: ~/.config/containers/systemd/skyward-api.container
+#   systemctl --user daemon-reload && systemctl --user restart skyward-api
+#
+# Sebelum ini API jalan sebagai biner native (/srv/qouver/apps/skyward/bin) di
+# unit native bernama SAMA. Unit native menang atas unit hasil generator quadlet,
+# jadi file itu harus sudah dipindahkan (lihat gate di deploy-vps.sh).
+#
+# Tiga nilai di bawah bukan default dan sengaja eksplisit:
+#   - HOST=0.0.0.0 — biner bind 127.0.0.1 secara default (internal/config),
+#     sedangkan PublishPort rootless mem-forward ke IP bridge (10.89.0.x).
+#     Bind loopback = container hidup tapi tak terjangkau dari host.
+#   - SKYWARD_TRUSTED_PROXIES — Caddy di host sampai ke container sebagai
+#     10.89.0.1, bukan loopback. Tanpa 10.89.0.0/24, X-Forwarded-For diabaikan
+#     dan rate-limit per-IP berubah jadi rate-limit global.
+#   - Volume logs — SKYWARD_LOG_DIR di env prod menunjuk ke jalur host yang sama;
+#     tanpa mount, log aplikatif (app-YYYY-MM-DD.log.gz) tidak ditulis.
+[Unit]
+Description=Skyward API (Go, schema skyward)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/skyward-api:local
+ContainerName=skyward-api
+Network=qouver
+PublishPort=127.0.0.1:8090:8090
+Pull=never
+AutoUpdate=local
+EnvironmentFile=/srv/qouver/apps/skyward/env/skyward-prod.env
+Environment=HOST=0.0.0.0
+Environment=SKYWARD_TRUSTED_PROXIES=127.0.0.0/8,::1,10.89.0.0/24
+# UserNS keep-id: uid 10001 milik image (`app`) dipetakan ke uid host sachiel,
+# sehingga proses bisa menulis ke logs milik sachiel. `User=1001` TIDAK cukup:
+# pada rootless tanpa keep-id, uid container dipetakan ke subuid, dan app gagal
+# membuka file log lalu keluar (log file init failed).
+Volume=/srv/qouver/apps/skyward/logs:/srv/qouver/apps/skyward/logs:Z
+UserNS=keep-id:uid=10001,gid=10001
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

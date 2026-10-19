@@ -2,7 +2,7 @@
 # Deploy skyward (monorepo: api/ Go + web/ SvelteKit) — pola cbs/fond/sds:
 # build DI VPS, tanpa registry/GHCR, tanpa secrets GitHub.
 #
-#   - API : podman build -> ekstrak binary native -> restart + health gate + rollback
+#   - API : podman build -> image localhost/skyward-api:local (quadlet) -> restart + health gate + rollback
 #   - Web : corepack pnpm install --frozen-lockfile && corepack pnpm run build -> swap folder statis (Caddy serve)
 #
 # Kontrak: ref-guard fail-closed, fetch+reset, hanya rebuild yang berubah,
@@ -15,6 +15,31 @@ LOG="/srv/qouver/apps/skyward/logs/deploy.log"
 APP_DIR="/srv/qouver/apps/skyward"
 mkdir -p "$APP_DIR/logs"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
+
+# Rollback API: kembalikan image sebelumnya (bukan binary: sejak quadlet,
+# versi lama hidup sebagai tag image).
+rollback_api() {
+  if podman image exists localhost/skyward-api:prev; then
+    log "==> rollback API: tag localhost/skyward-api:prev -> :local"
+    podman tag localhost/skyward-api:prev localhost/skyward-api:local
+    systemctl --user restart skyward-api 2>&1 | tee -a "$LOG" || true
+    sleep 2
+    systemctl --user is-active skyward-api 2>&1 | tee -a "$LOG" || true
+  else
+    log "==> WARN: image :prev tidak ada; rollback API dilewati"
+  fi
+}
+
+# Tunggu /readyz sehat (15 × 2 detik).
+wait_healthy() {
+  for _ in $(seq 1 15); do
+    if curl -fsS --max-time 3 http://127.0.0.1:8090/readyz >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
 
 log "Deploy trigger received for: $REPO ref=$REF"
 
@@ -73,6 +98,30 @@ if [ -f "$REPO_SCRIPT" ] && ! cmp -s "$REPO_SCRIPT" "$SELF_SCRIPT"; then
   else
     log "==> WARN: gagal menyiapkan $SELF_SCRIPT.new; script server dibiarkan apa adanya"
   fi
+fi
+
+# Self-update: samakan quadlet di server dengan versi repo.
+UNIT_DIR="$HOME/.config/containers/systemd"
+REPO_UNIT="$MONO_DIR/deploy/skyward-api.container"
+LIVE_UNIT="$UNIT_DIR/skyward-api.container"
+UNIT_CHANGED=0
+mkdir -p "$UNIT_DIR"
+if [ -f "$REPO_UNIT" ] && ! cmp -s "$REPO_UNIT" "$LIVE_UNIT"; then
+  cp -f "$REPO_UNIT" "$LIVE_UNIT" \
+    && log "==> unit skyward-api.container diperbarui dari repo" && UNIT_CHANGED=1
+fi
+
+# ── Gate unit: API kini container (quadlet), bukan biner native ──
+# Unit native ~/.config/systemd/user/skyward-api.service dan unit hasil generator
+# quadlet bernama sama, dan yang native MENANG. Kalau file itu masih ada,
+# `systemctl --user restart skyward-api` me-restart biner lama, image baru tidak
+# pernah jalan — sementara health gate tetap OK (dibaca dari biner lama), jadi
+# deploy melaporkan sukses padahal tidak ada yang berubah. Fail-closed.
+NATIVE_UNIT="$HOME/.config/systemd/user/skyward-api.service"
+if [ -e "$NATIVE_UNIT" ]; then
+  log "==> ERROR: $NATIVE_UNIT masih ada — unit native menutupi quadlet."
+  log "    Pindahkan dulu (mis. mv ke skyward-api.service.disabled), lalu: systemctl --user daemon-reload"
+  exit 1
 fi
 
 # ── 0. Gate migrasi ──
@@ -148,50 +197,47 @@ elif [ "$IS_FIRST" -eq 1 ] || grep -q "^migrations/" <<<"$CHANGED_FILES"; then
   fi
 fi
 
-# ── 1. API (Go, binary native) ──
+# ── 1. API (Go, container) ──
 if [ "$IS_FIRST" -eq 1 ] || grep -q "^apps/api/" <<<"$CHANGED_FILES"; then
   log "==> Build API (Go)..."
   cd "$MONO_DIR/apps/api"
-  BIN_DIR="$APP_DIR/bin"
-  BIN="$BIN_DIR/skyward-api"
   GIT_VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
   GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo none)
   GIT_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # Simpan image sebelumnya supaya rollout yang gagal bisa di-rollback.
+  # (Dulu: copy biner ke bin/*.prev. Setelah jadi quadlet, versi lama = tag image.)
+  if podman image exists localhost/skyward-api:local; then
+    podman tag localhost/skyward-api:local localhost/skyward-api:prev 2>/dev/null || true
+  fi
   podman build --no-cache \
     --build-arg VERSION="$GIT_VERSION" \
     --build-arg COMMIT="$GIT_COMMIT" \
     --build-arg DATE="$GIT_DATE" \
     -t localhost/skyward-api:local . 2>&1 | tail -20 | tee -a "$LOG"
-  mkdir -p "$BIN_DIR"
-  # Simpan binary sebelumnya supaya rollout yang gagal bisa di-rollback.
-  if [ -f "$BIN" ]; then cp -f "$BIN" "$BIN.prev"; fi
-  CONTAINER_ID=$(podman create localhost/skyward-api:local)
-  podman cp "$CONTAINER_ID:/usr/local/bin/skyward-api" "$BIN"
-  podman rm "$CONTAINER_ID" >/dev/null
 
   systemctl --user daemon-reload 2>&1 | tee -a "$LOG" || true
   systemctl --user restart skyward-api 2>&1 | tee -a "$LOG"
-  healthy=0
-  for _ in $(seq 1 15); do
-    if curl -fsS --max-time 3 http://127.0.0.1:8090/readyz >/dev/null 2>&1; then
-      healthy=1; break
-    fi
-    sleep 2
-  done
-  if [ "$healthy" -ne 1 ]; then
+  if ! wait_healthy; then
     log "==> ERROR: /readyz tidak sehat setelah restart"
-    if [ -f "$BIN.prev" ]; then
-      log "==> rollback ke binary sebelumnya"
-      cp -f "$BIN.prev" "$BIN"
-      systemctl --user restart skyward-api 2>&1 | tee -a "$LOG"
-      sleep 2
-      systemctl --user is-active skyward-api 2>&1 | tee -a "$LOG" || true
-    fi
+    rollback_api
     exit 1
   fi
   log "==> API sehat (/readyz OK)"
 else
   log "==> api/ tidak berubah; melewati restart API (menghindari downtime tick)"
+fi
+
+# Bila unit berubah tapi API tidak dibangun ulang di blok atas, terapkan unit baru.
+if [ "$UNIT_CHANGED" -eq 1 ] && ! grep -q "^apps/api/" <<<"$CHANGED_FILES"; then
+  log "==> unit berubah; restart skyward-api agar quadlet baru berlaku"
+  systemctl --user daemon-reload 2>&1 | tee -a "$LOG" || true
+  systemctl --user restart skyward-api 2>&1 | tee -a "$LOG"
+  if ! wait_healthy; then
+    log "==> ERROR: /readyz tidak sehat setelah penerapan unit"
+    rollback_api
+    exit 1
+  fi
+  log "==> API sehat (/readyz OK)"
 fi
 
 # ── 2. Web (static) ──
