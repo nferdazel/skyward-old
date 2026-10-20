@@ -25,6 +25,16 @@
 	let { airports, routes, preview = null, onmaptap }: Props = $props();
 	let container: HTMLDivElement | undefined = $state();
 	let cleanup: (() => void) | undefined;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let Lmod = $state<any>();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let map = $state<any>();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let markersLayer: any;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let routesLayer: any;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let previewLayer: any;
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	type L = any;
@@ -58,9 +68,62 @@
 		return out;
 	}
 
+	$effect(() => {
+		if (!map || !Lmod || !markersLayer || !routesLayer || !previewLayer) return;
+
+		markersLayer.clearLayers();
+		routesLayer.clearLayers();
+		previewLayer.clearLayers();
+
+		const byIata = new Map(airports.map((a) => [a.iata, a]));
+		const connected = new Set<string>();
+		for (const r of routes) {
+			connected.add(r.originIata);
+			connected.add(r.destinationIata);
+		}
+
+		// Draw all airports: high contrast for connected routes, subtle cockpit dots for unconnected
+		for (const a of airports) {
+			const isConnected = connected.has(a.iata);
+			const marker = Lmod.circleMarker([a.latitude, a.longitude], {
+				radius: isConnected ? 6 : 3.5,
+				color: isConnected ? '#5B9EE0' : 'rgba(255, 255, 255, 0.35)',
+				fillColor: isConnected ? '#5B9EE0' : '#161C25',
+				fillOpacity: isConnected ? 0.9 : 0.6,
+				weight: isConnected ? 1.5 : 1
+			}).addTo(markersLayer);
+
+			marker.bindTooltip(`[${a.iata}] ${a.city} (${a.country})`);
+			if (onmaptap) marker.on('click', () => onmaptap(a));
+		}
+
+		for (const r of routes) {
+			const o = byIata.get(r.originIata);
+			const d = byIata.get(r.destinationIata);
+			if (!o || !d) continue;
+			const arc = greatCircle(o, d, 18);
+			Lmod.polyline([[o.latitude, o.longitude], ...arc, [d.latitude, d.longitude]], {
+				color: '#3AAFA0',
+				weight: 2.5,
+				opacity: 0.72
+			}).addTo(routesLayer);
+		}
+
+		if (preview) {
+			const arc = greatCircle(preview.origin, preview.destination, 18);
+			Lmod.polyline(
+				[
+					[preview.origin.latitude, preview.origin.longitude],
+					...arc,
+					[preview.destination.latitude, preview.destination.longitude]
+				],
+				{ color: '#5B9EE0', weight: 3, opacity: 0.9, dashArray: '6 6' }
+			).addTo(previewLayer);
+		}
+	});
+
 	onMount(() => {
 		let cancelled = false;
-		let map: L | undefined;
 		let observer: ResizeObserver | undefined;
 		void (async () => {
 			if (!container) return;
@@ -68,36 +131,40 @@
 			try {
 				Leaflet = (await import('leaflet')) as unknown as { default?: L } & L;
 			} catch (err) {
-				// Chunk peta gagal dimuat (offline, proxy, atau teardown test).
-				// Tanpa catch, kegagalannya jadi unhandled rejection: peta hilang
-				// tanpa jejak dan pemain tidak tahu apa yang salah.
 				console.error('RouteMapOverlay: failed to load leaflet', err);
 				return;
 			}
-			const Lmod: L = Leaflet.default ?? Leaflet;
+			const loadedL: L = Leaflet.default ?? Leaflet;
 			if (cancelled || !container) return;
+			Lmod = loadedL;
 
-			map = Lmod.map(container, {
-				worldCopyJump: true,
-				zoomControl: true,
-				attributionControl: true,
-				// Cap zoom-out at 3 so the world always fills the canvas — zooming
-				// further out would leave unavoidable empty bands around a globe.
-				minZoom: 3,
-				maxZoom: 18
-			}).setView([12, 108], 3);
-			// Esri "Dark Gray Canvas" — no API key required, dark theme that
-			// matches the command UI. (CARTO's free basemaps now return an
-			// "API KEY REQUIRED" placeholder tile, so they were dropped.)
-			Lmod.tileLayer(
-				'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-				{
-					attribution: 'Tiles © Esri — Esri, DeLorme, NAVTEQ',
-					maxZoom: 16,
+			const createdMap = loadedL
+				.map(container, {
+					worldCopyJump: true,
+					zoomControl: true,
+					attributionControl: true,
 					minZoom: 3,
-					crossOrigin: true
-				}
-			).addTo(map);
+					maxZoom: 18
+				})
+				.setView([12, 108], 3);
+
+			loadedL
+				.tileLayer(
+					'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+					{
+						attribution: 'Tiles © Esri — Esri, DeLorme, NAVTEQ',
+						maxZoom: 16,
+						minZoom: 3,
+						crossOrigin: true
+					}
+				)
+				.addTo(createdMap);
+
+			markersLayer = loadedL.layerGroup().addTo(createdMap);
+			routesLayer = loadedL.layerGroup().addTo(createdMap);
+			previewLayer = loadedL.layerGroup().addTo(createdMap);
+
+			map = createdMap;
 
 			const byIata = new Map(airports.map((a) => [a.iata, a]));
 			const connected = new Set<string>();
@@ -105,56 +172,13 @@
 				connected.add(r.originIata);
 				connected.add(r.destinationIata);
 			}
-			for (const iata of connected) {
-				const a = byIata.get(iata);
-				if (!a) continue;
-				const marker = Lmod.circleMarker([a.latitude, a.longitude], {
-					radius: 6,
-					color: '#5B9EE0',
-					fillColor: '#5B9EE0',
-					fillOpacity: 0.9,
-					weight: 1
-				}).addTo(map);
-				marker.bindTooltip(`${a.iata} — ${a.name}`);
-				if (onmaptap) marker.on('click', () => onmaptap(a));
-			}
-			for (const r of routes) {
-				const o = byIata.get(r.originIata);
-				const d = byIata.get(r.destinationIata);
-				if (!o || !d) continue;
-				const arc = greatCircle(o, d, 18);
-				Lmod.polyline([[o.latitude, o.longitude], ...arc, [d.latitude, d.longitude]], {
-					color: '#3AAFA0',
-					weight: 2.5,
-					opacity: 0.72
-				}).addTo(map);
-			}
-			if (preview) {
-				const arc = greatCircle(preview.origin, preview.destination, 18);
-				Lmod.polyline(
-					[
-						[preview.origin.latitude, preview.origin.longitude],
-						...arc,
-						[preview.destination.latitude, preview.destination.longitude]
-					],
-					{ color: '#5B9EE0', weight: 3, opacity: 0.9, dashArray: '6 6' }
-				).addTo(map);
-			}
-
-			// Frame the drawn network (airports in use) if there is one; otherwise
-			// keep the default continental view.
 			const used = [...connected].map((iata) => byIata.get(iata)).filter(Boolean) as Airport[];
 			if (used.length > 0 && !preview) {
-				const bounds = Lmod.latLngBounds(used.map((a) => [a.latitude, a.longitude]));
-				map.fitBounds(bounds, { padding: [40, 40], maxZoom: 6 });
+				const bounds = loadedL.latLngBounds(used.map((a) => [a.latitude, a.longitude]));
+				createdMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 6 });
 			}
 
-			// Fix the classic "empty/partial map" case: Leaflet measures the
-			// container at init; in an SPA it can be 0×0 or smaller than final
-			// until layout settles. Re-measure on a few successive frames and on
-			// every container resize.
-			const mapRef = map;
-			const revalidate = () => mapRef?.invalidateSize();
+			const revalidate = () => createdMap.invalidateSize();
 			requestAnimationFrame(() => {
 				revalidate();
 				requestAnimationFrame(revalidate);
@@ -167,7 +191,7 @@
 
 			cleanup = () => {
 				observer?.disconnect();
-				mapRef?.remove();
+				createdMap.remove();
 			};
 		})();
 		return () => {
