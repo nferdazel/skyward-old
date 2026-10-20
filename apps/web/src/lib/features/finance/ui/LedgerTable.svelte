@@ -14,6 +14,7 @@
 
 	type Filter = 'all' | IfrsGroup;
 	let filter = $state<Filter>('all');
+	let currentPage = $state(1);
 
 	const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 	const money = (n: number) => `$${fmt.format(Math.round(n))}`;
@@ -39,6 +40,18 @@
 			: store.state.transactions.filter((t) => groupOf(t) === filter)
 	);
 
+	const PAGE_SIZE = 50;
+	const totalPages = $derived(Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
+	const safePage = $derived(Math.min(Math.max(1, currentPage), totalPages));
+	const startIndex = $derived((safePage - 1) * PAGE_SIZE);
+	const endIndex = $derived(Math.min(startIndex + PAGE_SIZE, filtered.length));
+	const paginated = $derived(filtered.slice(startIndex, endIndex));
+
+	function setFilter(f: Filter) {
+		filter = f;
+		currentPage = 1;
+	}
+
 	function tone(t: BankTransaction): 'success' | 'error' {
 		return t.transactionType === 'credit' ? 'success' : 'error';
 	}
@@ -47,7 +60,7 @@
 <div class="ledger">
 	<div class="filters">
 		{#each filters as f (f.value)}
-			<button class:active={filter === f.value} onclick={() => (filter = f.value)}>{f.label}</button
+			<button class:active={filter === f.value} onclick={() => setFilter(f.value)}>{f.label}</button
 			>
 		{/each}
 	</div>
@@ -68,7 +81,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each filtered as t (t.id)}
+						{#each paginated as t (t.id)}
 							<tr>
 								<td class="muted">{t.gameDate ? t.gameDate.slice(0, 10) : '—'}</td>
 								<td>{t.description ?? t.transactionType}</td>
@@ -87,6 +100,35 @@
 					</tbody>
 				</table>
 			</div>
+
+			{#if filtered.length > PAGE_SIZE}
+				<div class="pagination-bar">
+					<span class="pagination-info muted tnum">
+						Showing {startIndex + 1}–{endIndex} of {filtered.length}
+					</span>
+					<div class="pagination-actions">
+						<button
+							class="page-btn"
+							disabled={safePage <= 1}
+							onclick={() => (currentPage = safePage - 1)}
+							aria-label="Previous page"
+						>
+							Prev
+						</button>
+						<span class="page-indicator tnum muted">
+							{safePage} / {totalPages}
+						</span>
+						<button
+							class="page-btn"
+							disabled={safePage >= totalPages}
+							onclick={() => (currentPage = safePage + 1)}
+							aria-label="Next page"
+						>
+							Next
+						</button>
+					</div>
+				</div>
+			{/if}
 		{/if}
 	</CraftCard>
 </div>
@@ -143,5 +185,50 @@
 	.muted {
 		color: var(--color-text-muted);
 		font-size: 12px;
+	}
+	.pagination-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-top: var(--space-sm);
+		margin-top: var(--space-sm);
+		border-top: 1px solid var(--color-border);
+		flex-wrap: wrap;
+		gap: var(--space-xs);
+	}
+	.pagination-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+	}
+	.page-btn {
+		padding: 4px var(--space-sm);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-primary);
+		font-size: 11px;
+		font-family: inherit;
+		cursor: pointer;
+		min-height: 28px;
+		min-width: 48px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		transition:
+			background var(--transition-fast),
+			border-color var(--transition-fast);
+	}
+	.page-btn:hover:not(:disabled) {
+		background: var(--color-surface-hover);
+		border-color: var(--color-border-strong);
+	}
+	.page-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+	.page-indicator {
+		font-size: 11px;
+		padding: 0 var(--space-xs);
 	}
 </style>

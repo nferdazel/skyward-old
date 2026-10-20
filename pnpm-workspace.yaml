@@ -10,3 +10,7 @@ allowBuilds:
 # Cooldown paket baru (menit): versi yang baru terbit tidak langsung boleh dipakai.
 # Default pnpm 11 = 1440 (1 hari); dinaikkan ke 4320 (3 hari) sesuai kebijakan supply chain.
 minimumReleaseAge: 4320
+
+overrides:
+  tinypool: '>=2.1.2'
+  postcss-selector-parser: '>=7.1.6'
