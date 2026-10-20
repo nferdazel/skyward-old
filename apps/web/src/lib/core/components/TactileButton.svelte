@@ -117,7 +117,8 @@
 
 	.primary {
 		background: var(--color-accent);
-		color: #000;
+		color: #080b10;
+		font-weight: 700;
 	}
 	.primary:not(:disabled):hover {
 		background: var(--color-accent-bright);
