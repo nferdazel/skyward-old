@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import TactileButton from './TactileButton.svelte';
+	import { focusTrap } from '../a11y/focus-trap';
 
 	/**
 	 * Right slide-over inspector drawer for deep operational workflows. Ported
@@ -26,8 +27,15 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="overlay">
-	<button class="scrim" aria-label="Close drawer" onclick={onclose}></button>
-	<div class="drawer" style="width: {width};" role="dialog" aria-modal="true" aria-label={title}>
+	<button class="scrim" aria-label="Close drawer" tabindex="-1" onclick={onclose}></button>
+	<div
+		class="drawer"
+		style="width: {width};"
+		role="dialog"
+		aria-modal="true"
+		aria-label={title}
+		use:focusTrap
+	>
 		<header>
 			<div class="titles">
 				<span class="title">{title}</span>

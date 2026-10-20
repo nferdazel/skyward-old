@@ -30,6 +30,7 @@
 	});
 	let open = $state(false);
 	let dropUp = $state(false);
+	let activeIndex = $state(-1);
 	let wrap: HTMLDivElement | undefined = $state();
 
 	const MENU_MAX = 240;
@@ -55,17 +56,47 @@
 	function pick(a: Airport) {
 		query = display(a);
 		open = false;
+		activeIndex = -1;
 		onselect(a);
 	}
 	function clear() {
 		query = '';
+		activeIndex = -1;
 		onselect(null);
 	}
 
 	function oninput() {
 		open = true;
+		activeIndex = -1;
 		// Free-text: clear the committed value until a row is picked.
 		onselect(null);
+	}
+
+	function onkeydown(e: KeyboardEvent) {
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			if (!open) {
+				show();
+			} else if (filtered.length > 0) {
+				activeIndex = (activeIndex + 1) % filtered.length;
+			}
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			if (open && filtered.length > 0) {
+				activeIndex = (activeIndex - 1 + filtered.length) % filtered.length;
+			}
+		} else if (e.key === 'Enter') {
+			if (open && activeIndex >= 0 && filtered[activeIndex]) {
+				e.preventDefault();
+				pick(filtered[activeIndex]);
+			}
+		} else if (e.key === 'Escape') {
+			if (open) {
+				e.preventDefault();
+				open = false;
+				activeIndex = -1;
+			}
+		}
 	}
 
 	/** Decide above/below before opening: flip up when there isn't room below. */
@@ -80,6 +111,7 @@
 	function show() {
 		computeDirection();
 		open = true;
+		activeIndex = -1;
 	}
 </script>
 
@@ -88,9 +120,15 @@
 	<div class="input-wrap" bind:this={wrap}>
 		<input
 			class="control"
+			role="combobox"
+			aria-expanded={open}
+			aria-controls="airport-listbox"
+			aria-autocomplete="list"
+			aria-haspopup="listbox"
 			{placeholder}
 			bind:value={query}
 			{oninput}
+			{onkeydown}
 			onfocus={show}
 			onblur={() => setTimeout(() => (open = false), 120)}
 		/>
@@ -99,10 +137,15 @@
 		{/if}
 	</div>
 	{#if open && filtered.length > 0}
-		<ul class="menu" class:drop-up={dropUp} role="listbox">
-			{#each filtered as a (a.iata)}
+		<ul id="airport-listbox" class="menu" class:drop-up={dropUp} role="listbox">
+			{#each filtered as a, i (a.iata)}
 				<li>
-					<button role="option" aria-selected={value?.iata === a.iata} onclick={() => pick(a)}>
+					<button
+						role="option"
+						aria-selected={value?.iata === a.iata || i === activeIndex}
+						class:active={i === activeIndex}
+						onclick={() => pick(a)}
+					>
 						<span class="iata">{a.iata}</span>
 						<span class="city">{a.city}</span>
 						<span class="country">{a.country}</span>
@@ -192,8 +235,10 @@
 		text-align: left;
 		font: inherit;
 	}
-	.menu button:hover {
+	.menu button:hover,
+	.menu button.active {
 		background: var(--color-surface-active);
+		outline: 1px solid var(--color-accent);
 	}
 	.iata {
 		font-weight: 700;

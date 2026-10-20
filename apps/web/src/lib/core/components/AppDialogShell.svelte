@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import TactileButton from './TactileButton.svelte';
+	import { focusTrap } from '../a11y/focus-trap';
 
 	/** Standar dialog: judul, subjudul opsional, konten, aksi. Port `AppDialogShell`. */
 	type Props = {
@@ -31,13 +32,14 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="backdrop">
-	<button class="scrim" aria-label="Close dialog" onclick={onclose}></button>
+	<button class="scrim" aria-label="Close dialog" tabindex="-1" onclick={onclose}></button>
 	<div
 		class="dialog"
 		role="dialog"
 		aria-modal="true"
 		aria-label={title}
 		style="max-width: {maxWidth};"
+		use:focusTrap
 	>
 		<span class="top-bevel" aria-hidden="true"></span>
 		<div class="head">
