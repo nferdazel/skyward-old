@@ -3,6 +3,7 @@
 	import AppBadge from '$lib/core/components/AppBadge.svelte';
 	import AppSparkline from '$lib/core/components/AppSparkline.svelte';
 	import TactileButton from '$lib/core/components/TactileButton.svelte';
+	import TelemetryStatCard from '$lib/core/components/TelemetryStatCard.svelte';
 	import ExpenseBreakdownBar from '$lib/core/components/ExpenseBreakdownBar.svelte';
 	import { buildIncomeStatement } from '$lib/features/finance/domain/ifrs-report-builder';
 	import { buildOverviewSnapshot, financeTotals } from '../domain/overview-snapshot';
@@ -132,11 +133,28 @@
 
 	{#if overview.bankruptcyRiskLevel > 0}
 		<div class="banner" class:critical={overview.bankruptcyRiskLevel === 2} role="alert">
-			<strong>{overview.bankruptcyRiskLabel}</strong>
-			<span
-				>Cash is {stores.simulation.state.cashBalance < 0 ? 'negative' : 'at the warning threshold'} —
-				take action.</span
-			>
+			<div class="banner-body">
+				<strong>{overview.bankruptcyRiskLabel}</strong>
+				<span
+					>Cash is {stores.simulation.state.cashBalance < 0
+						? 'negative'
+						: 'at the warning threshold'} — take action.</span
+				>
+			</div>
+			<div class="banner-actions">
+				<TactileButton
+					text="Apply for Loan"
+					type="primary"
+					height="30px"
+					onclick={() => onnavigate('financials')}
+				/>
+				<TactileButton
+					text="Manage Fleet"
+					type="secondary"
+					height="30px"
+					onclick={() => onnavigate('fleet')}
+				/>
+			</div>
 		</div>
 	{/if}
 
@@ -187,37 +205,42 @@
 	{:else}
 		<span class="section">Command deck</span>
 		<div class="deck">
-			<CraftCard onclick={() => onnavigate('fleet')}>
-				<span class="k">Fleet readiness</span>
-				<span class="big tnum ok">{overview.readyFleetCount} ready</span>
-				<span class="muted"
-					>{overview.groundedCount} grounded · {overview.leasedCount} leased · avg cond {Math.round(
-						overview.averageCondition
-					)}%</span
-				>
-			</CraftCard>
-			<CraftCard onclick={() => onnavigate('routes')}>
-				<span class="k">Routes</span>
-				<span class="big tnum">{overview.activeRoutes}</span>
-				<span class="muted"
-					>{overview.riskyRoutes} at risk · {overview.avgFlightsPerRouteLabel}</span
-				>
-				<span class="muted">Top risk: {overview.topRouteRiskLabel}</span>
-			</CraftCard>
-			<CraftCard onclick={() => onnavigate('rankings')}>
-				<span class="k">Leader gap</span>
-				<span class="big tnum" style="color: {overview.leaderGapColor};"
-					>{overview.leaderGapLabel}</span
-				>
-				<span class="muted"
-					>Leader bot: {overview.leadingBotArchetype} · {overview.leadingBotFleet} aircraft</span
-				>
-			</CraftCard>
-			<CraftCard onclick={() => onnavigate('routes')}>
-				<span class="k">Best yield</span>
-				<span class="big">{overview.bestRouteYieldLabel}</span>
-				<span class="muted">Slack: {Math.round(overview.totalSlackHours)} h/wk</span>
-			</CraftCard>
+			<TelemetryStatCard
+				label="FLEET READINESS"
+				value={`${overview.readyFleetCount} READY`}
+				status={overview.groundedCount > 0 ? 'caution' : 'nominal'}
+				statusLabel={overview.groundedCount > 0
+					? `${overview.groundedCount} GROUNDED`
+					: 'ALL FLIGHT WORTHY'}
+				subtext={`${overview.leasedCount} leased · avg cond ${Math.round(overview.averageCondition)}%`}
+				onclick={() => onnavigate('fleet')}
+			/>
+			<TelemetryStatCard
+				label="ACTIVE ROUTES"
+				value={overview.activeRoutes}
+				status={overview.riskyRoutes > 0 ? 'caution' : 'nominal'}
+				statusLabel={overview.riskyRoutes > 0
+					? `${overview.riskyRoutes} AT RISK`
+					: 'HEALTHY NETWORK'}
+				subtext={`Avg ${overview.avgFlightsPerRouteLabel} · Top risk: ${overview.topRouteRiskLabel}`}
+				onclick={() => onnavigate('routes')}
+			/>
+			<TelemetryStatCard
+				label="LEADER GAP"
+				value={overview.leaderGapLabel}
+				status="standby"
+				statusLabel={`LEADER: ${overview.leadingBotArchetype.toUpperCase()}`}
+				subtext={`Bot fleet: ${overview.leadingBotFleet} aircraft`}
+				onclick={() => onnavigate('rankings')}
+			/>
+			<TelemetryStatCard
+				label="BEST YIELD"
+				value={overview.bestRouteYieldLabel}
+				status="nominal"
+				statusLabel={`SLACK: ${Math.round(overview.totalSlackHours)}H/WK`}
+				subtext="Inspect route network and schedule"
+				onclick={() => onnavigate('routes')}
+			/>
 		</div>
 	{/if}
 
@@ -378,9 +401,22 @@
 		border-radius: var(--radius-default);
 		color: var(--color-warning);
 		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-md);
+		font-size: 13px;
+	}
+	.banner-body {
+		display: flex;
 		gap: var(--space-sm);
 		align-items: baseline;
-		font-size: 13px;
+		flex-wrap: wrap;
+	}
+	.banner-actions {
+		display: flex;
+		gap: var(--space-sm);
+		align-items: center;
 	}
 	.banner.critical {
 		background: var(--color-error-subtle);
