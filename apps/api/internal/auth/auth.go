@@ -41,6 +41,9 @@ func HashPassword(password string) (string, error) {
 		enc(salt), enc(hash)), nil
 }
 
+// DummyHash — pre-computed hash untuk verifikasi login konstan waktu saat user tak ditemukan (SEC-05).
+var DummyHash, _ = HashPassword("skyward-dummy-auth-constant-time-salt-padding")
+
 // VerifyPassword — verifikasi password terhadap string hash argon2id.
 func VerifyPassword(password, encoded string) (bool, error) {
 	parts := strings.Split(encoded, "$")

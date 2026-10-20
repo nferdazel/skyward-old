@@ -228,17 +228,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.Store.GetUserByUsername(r.Context(), attempted)
-	if err != nil {
-		// Hindari user enumeration: response sama untuk user tak dikenal & password salah
-		httperr.WriteError(w, nil, httperr.Unauthorized("invalid username or password"))
-		return
+	var hashToVerify string
+	if err != nil || u == nil || u.PasswordHash == nil || *u.PasswordHash == "" {
+		hashToVerify = auth.DummyHash
+	} else {
+		hashToVerify = *u.PasswordHash
 	}
-	if u.PasswordHash == nil || *u.PasswordHash == "" {
-		httperr.WriteError(w, nil, httperr.Unauthorized("invalid username or password"))
-		return
-	}
-	ok, err := auth.VerifyPassword(body.Password, *u.PasswordHash)
-	if err != nil || !ok {
+
+	ok, verifyErr := auth.VerifyPassword(body.Password, hashToVerify)
+	if err != nil || u == nil || u.PasswordHash == nil || *u.PasswordHash == "" || verifyErr != nil || !ok {
+		// Hindari user enumeration & timing attack: response sama dan waktu komputasi konstan (SEC-05)
 		httperr.WriteError(w, nil, httperr.Unauthorized("invalid username or password"))
 		return
 	}

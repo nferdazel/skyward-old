@@ -17,6 +17,8 @@ skyward.qouver.com {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://api.qouver.com wss://api.qouver.com;"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 	}
 
 	# Aset ber-hash SvelteKit (immutable) + ikon.
