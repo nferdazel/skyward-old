@@ -225,6 +225,24 @@
 		display: grid;
 		place-items: center;
 	}
+	@media (max-width: 640px) {
+		.hud {
+			padding: 0 var(--space-sm);
+			gap: var(--space-sm);
+		}
+		.identity,
+		.sep,
+		.clock {
+			display: none;
+		}
+		.center {
+			margin-left: auto;
+			gap: var(--space-sm);
+		}
+		.metric:nth-child(2) {
+			display: none;
+		}
+	}
 	@media (prefers-reduced-motion: reduce) {
 		.pulse {
 			animation: none;

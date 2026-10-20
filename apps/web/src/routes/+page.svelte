@@ -13,6 +13,8 @@
 	import SettingsView from '$lib/features/settings/ui/SettingsView.svelte';
 	import { getAuthStore } from '$lib/features/auth/state/auth-context.svelte';
 	import { appStores } from '$lib/core/di/stores-context.svelte';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 
 	const auth = getAuthStore();
 	// Stores dibangun reaktif saat sesi siap. Layout hanya merender halaman ini
@@ -20,7 +22,27 @@
 	// satu flush (mis. logout melepas stores) tanpa membuang non-null assertion.
 	const stores = $derived(appStores.stores);
 
-	let tab = $state<NavKey>('dashboard');
+	const validTabs: NavKey[] = [
+		'dashboard',
+		'fleet',
+		'routes',
+		'financials',
+		'rankings',
+		'settings'
+	];
+	const queryTab = page.url.searchParams.get('tab') as NavKey | null;
+	let tab = $state<NavKey>(queryTab && validTabs.includes(queryTab) ? queryTab : 'dashboard');
+
+	function setTab(nextTab: NavKey) {
+		tab = nextTab;
+		const url = new URL(page.url);
+		if (nextTab === 'dashboard') {
+			url.searchParams.delete('tab');
+		} else {
+			url.searchParams.set('tab', nextTab);
+		}
+		replaceState(url.toString(), {});
+	}
 
 	// Leaderboard loads lazily on first open.
 	$effect(() => {
@@ -68,7 +90,17 @@
 
 {#if stores}
 	<div class="app">
-		<AppSidebar active={tab} onselect={(k) => (tab = k)} onlogout={() => auth.logout()} />
+		<AppSidebar
+			active={tab}
+			onselect={(k) => setTab(k)}
+			onlogout={() => auth.logout()}
+			alerts={{
+				fleetGrounded: stores.fleet.state.aircraft.some(
+					(a) => a.condition <= (auth.user?.autoGroundingThreshold ?? 40)
+				),
+				cashWarning: stores.simulation.state.cashBalance < 0
+			}}
+		/>
 
 		<div class="main">
 			{#if auth.user}
@@ -96,7 +128,7 @@
 			<div class="content">
 				{#if tab === 'dashboard'}
 					{#if auth.user}
-						<OverviewTab {stores} user={auth.user} onnavigate={(t) => (tab = t as NavKey)} />
+						<OverviewTab {stores} user={auth.user} onnavigate={(t) => setTab(t as NavKey)} />
 					{/if}
 				{:else if tab === 'fleet'}
 					<FleetView
@@ -147,7 +179,7 @@
 
 	{#if auth.user && !auth.user.onboardingCompleted}
 		<OnboardingOverlay
-			onnavigate={(t) => (tab = t as NavKey)}
+			onnavigate={(t) => setTab(t as NavKey)}
 			oncomplete={() => {
 				auth.markOnboardingCompleted();
 				void stores.simulation.markOnboardingComplete();
@@ -199,5 +231,14 @@
 		border-bottom: 1px solid var(--color-error);
 		color: var(--color-error);
 		font-size: 12px;
+	}
+	@media (max-width: 768px) {
+		.app {
+			flex-direction: column;
+		}
+		.content {
+			padding: var(--space-md);
+			padding-bottom: 72px;
+		}
 	}
 </style>

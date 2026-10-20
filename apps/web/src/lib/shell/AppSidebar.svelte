@@ -11,9 +11,13 @@
 		active: NavKey;
 		onselect: (key: NavKey) => void;
 		onlogout: () => void;
+		alerts?: {
+			fleetGrounded?: boolean;
+			cashWarning?: boolean;
+		};
 	};
 
-	let { active, onselect, onlogout }: Props = $props();
+	let { active, onselect, onlogout, alerts }: Props = $props();
 
 	const items: { key: NavKey; label: string; icon: string }[] = [
 		{
@@ -66,6 +70,11 @@
 					<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
 						<path d={item.icon} fill="currentColor" />
 					</svg>
+					{#if item.key === 'fleet' && alerts?.fleetGrounded}
+						<span class="pip alert" aria-hidden="true"></span>
+					{:else if item.key === 'financials' && alerts?.cashWarning}
+						<span class="pip warn" aria-hidden="true"></span>
+					{/if}
 					<span class="sr">{item.label}</span>
 				</button>
 			</li>
@@ -153,6 +162,22 @@
 		background: var(--color-error-subtle);
 		color: var(--color-error);
 	}
+	.pip {
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+	}
+	.pip.alert {
+		background: var(--color-error);
+		box-shadow: 0 0 6px var(--color-error);
+	}
+	.pip.warn {
+		background: var(--color-warning);
+		box-shadow: 0 0 6px var(--color-warning);
+	}
 	.sr {
 		position: absolute;
 		width: 1px;
@@ -160,5 +185,52 @@
 		overflow: hidden;
 		clip: rect(0 0 0 0);
 		white-space: nowrap;
+	}
+	@media (max-width: 768px) {
+		.rail {
+			position: fixed;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			width: 100%;
+			height: 56px;
+			flex: 0 0 56px;
+			flex-direction: row;
+			border-right: none;
+			border-top: 1px solid var(--color-border);
+			padding: 0 var(--space-sm);
+			z-index: 50;
+			justify-content: space-around;
+		}
+		.logo,
+		.divider {
+			display: none;
+		}
+		ul {
+			flex-direction: row;
+			justify-content: space-around;
+			width: auto;
+			flex: 1;
+		}
+		li {
+			width: auto;
+			padding: 0;
+		}
+		.item {
+			width: 44px;
+			height: 44px;
+			border-left: 1px solid transparent;
+			border-bottom: 3px solid transparent;
+		}
+		.item.active {
+			border-left-color: transparent;
+			border-bottom-color: var(--color-accent);
+			box-shadow: inset 0 -2px 8px rgba(91, 158, 224, 0.2);
+		}
+		.logout {
+			margin-top: 0;
+			width: 44px;
+			height: 44px;
+		}
 	}
 </style>
