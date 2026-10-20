@@ -47,6 +47,40 @@
 	);
 	const repairAll = $derived(fleet.reduce((s, a) => s + a.repairCost, 0));
 
+	let sortBy = $state<'none' | 'condition' | 'model' | 'tail'>('none');
+	let sortDir = $state<'asc' | 'desc'>('asc');
+
+	function toggleSort(col: 'condition' | 'model' | 'tail') {
+		if (sortBy === col) {
+			sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortBy = col;
+			sortDir = 'asc';
+		}
+	}
+
+	const sortedFleet = $derived.by(() => {
+		if (sortBy === 'none') return fleet;
+		return [...fleet].sort((a, b) => {
+			let cmp = 0;
+			if (sortBy === 'condition') cmp = a.condition - b.condition;
+			else if (sortBy === 'model')
+				cmp = (a.model.modelName || '').localeCompare(b.model.modelName || '');
+			else if (sortBy === 'tail') cmp = (a.tailNumber || '').localeCompare(b.tailNumber || '');
+			return sortDir === 'asc' ? cmp : -cmp;
+		});
+	});
+
+	async function repairAllAircraft() {
+		const toRepair = fleet.filter((a) => a.repairCost > 0);
+		if (toRepair.length === 0) return;
+		busy = true;
+		for (const a of toRepair) {
+			await store.repair(a.id);
+		}
+		busy = false;
+	}
+
 	async function repair(a: UserFleetAircraft) {
 		busy = true;
 		await store.repair(a.id);
@@ -110,8 +144,21 @@
 						<span class="k">Lease Burn</span><span class="v warn">{money(leaseBurn)}</span>
 					</div>
 					<span class="vline"></span>
-					<div class="kpi">
-						<span class="k">Repair All</span><span class="v bad">{money(repairAll)}</span>
+					<div class="kpi repair-kpi">
+						<div class="kpi-head">
+							<span class="k">Repair All</span>
+							{#if repairAll > 0}
+								<button
+									class="repair-all-pill"
+									disabled={busy}
+									onclick={repairAllAircraft}
+									aria-label="Repair all aircraft"
+								>
+									Fix all
+								</button>
+							{/if}
+						</div>
+						<span class="v bad tnum">{money(repairAll)}</span>
 					</div>
 				</div>
 			</CraftCard>
@@ -121,16 +168,32 @@
 					<table>
 						<thead>
 							<tr>
-								<th>Aircraft</th>
+								<th
+									class="sortable"
+									onclick={() => toggleSort('tail')}
+									role="button"
+									tabindex="0"
+									onkeydown={(e) => e.key === 'Enter' && toggleSort('tail')}
+								>
+									Aircraft {sortBy === 'tail' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+								</th>
 								<th>Acquisition</th>
-								<th>Condition</th>
+								<th
+									class="sortable"
+									onclick={() => toggleSort('condition')}
+									role="button"
+									tabindex="0"
+									onkeydown={(e) => e.key === 'Enter' && toggleSort('condition')}
+								>
+									Condition {sortBy === 'condition' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+								</th>
 								<th>Status</th>
 								<th>Cabin</th>
 								<th>Actions</th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each fleet as a (a.id)}
+							{#each sortedFleet as a (a.id)}
 								<tr
 									class:selected={a.id === selected?.id}
 									onclick={() => {
@@ -326,6 +389,41 @@
 		text-transform: uppercase;
 		border-bottom: 1px solid var(--color-border);
 		white-space: nowrap;
+	}
+	th.sortable {
+		cursor: pointer;
+		user-select: none;
+	}
+	th.sortable:hover {
+		color: var(--color-accent);
+		background: var(--color-surface-3);
+	}
+	.kpi-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-xs);
+	}
+	.repair-all-pill {
+		background: var(--color-error-subtle);
+		border: 1px solid var(--color-error);
+		color: var(--color-error);
+		border-radius: var(--radius-tight);
+		font-size: 9px;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		padding: 2px 6px;
+		cursor: pointer;
+		transition: background var(--motion-fast);
+	}
+	.repair-all-pill:hover:not(:disabled) {
+		background: var(--color-error);
+		color: #fff;
+	}
+	.repair-all-pill:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 	td {
 		padding: var(--space-sm) var(--space-md);

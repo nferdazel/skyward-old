@@ -3,6 +3,7 @@
 	import MultiSelectField from '$lib/core/components/MultiSelectField.svelte';
 	import TactileButton from '$lib/core/components/TactileButton.svelte';
 	import SlideOverDrawer from '$lib/core/components/SlideOverDrawer.svelte';
+	import CabinLayoutPreview from '$lib/core/components/CabinLayoutPreview.svelte';
 	import type { FleetStore } from '../state/fleet-store.svelte';
 	import type { AircraftModel } from '../domain/fleet-models';
 
@@ -245,6 +246,17 @@
 					>
 				{/if}
 			</div>
+			<div class="visualizer-wrap">
+				<CabinLayoutPreview
+					capacity={m.capacity}
+					economy={eco}
+					business={bus}
+					firstClass={first}
+					manufacturer={m.manufacturer}
+					modelName={m.modelName}
+					tailNumber={nickname ? nickname.toUpperCase() : undefined}
+				/>
+			</div>
 			<label><span>Nickname</span><input bind:value={nickname} /></label>
 			<label><span>Economy seats</span><input type="number" min="0" bind:value={eco} /></label>
 			<label><span>Business seats</span><input type="number" min="0" bind:value={bus} /></label>
@@ -368,6 +380,9 @@
 	.modes {
 		display: flex;
 		gap: var(--space-sm);
+	}
+	.visualizer-wrap {
+		margin-bottom: var(--space-sm);
 	}
 	.modes button {
 		flex: 1;

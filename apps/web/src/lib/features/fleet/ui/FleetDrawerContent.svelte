@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import AppBadge from '$lib/core/components/AppBadge.svelte';
 	import TactileButton from '$lib/core/components/TactileButton.svelte';
+	import CabinLayoutPreview from '$lib/core/components/CabinLayoutPreview.svelte';
 	import FlightConditionCell from './FlightConditionCell.svelte';
 	import type { UserFleetAircraft } from '../domain/fleet-models';
 	import {
@@ -108,6 +109,17 @@
 
 	<section class="cabin">
 		<span class="label">Cabin configuration</span>
+		<div class="visualizer-wrap">
+			<CabinLayoutPreview
+				capacity={aircraft.model.capacity}
+				economy={eco}
+				business={bus}
+				firstClass={first}
+				manufacturer={aircraft.model.manufacturer}
+				modelName={aircraft.model.modelName}
+				tailNumber={aircraft.tailNumber}
+			/>
+		</div>
 		<div class="cabin-grid">
 			<label><span>Economy</span><input type="number" min="0" bind:value={eco} /></label>
 			<label><span>Business</span><input type="number" min="0" bind:value={bus} /></label>
@@ -206,6 +218,9 @@
 		letter-spacing: 0.08em;
 		color: var(--color-text-muted);
 		margin-bottom: var(--space-sm);
+	}
+	.visualizer-wrap {
+		margin-bottom: var(--space-md);
 	}
 	.cabin-grid {
 		display: grid;
