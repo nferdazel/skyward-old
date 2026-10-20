@@ -163,6 +163,37 @@ func (h *Hub) Broadcast(channel, event string) {
 	}
 }
 
+// BroadcastUser — kirim event ke subscriber channel yang memiliki UserID tertentu.
+// Digunakan untuk mutasi personal (armada, pinjaman, rute) agar tidak membocorkan
+// aktivitas pemain lain atau memicu thundering herd refetch ke pemain yang tidak terdampak (SEC-03).
+func (h *Hub) BroadcastUser(userID, channel, event string) {
+	if userID == "" {
+		h.Broadcast(channel, event)
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	clients := h.channels[channel]
+	if len(clients) == 0 {
+		return
+	}
+	msg, err := json.Marshal(Event{Type: "change", Channel: channel, Event: event})
+	if err != nil {
+		return
+	}
+	sent := 0
+	for c := range clients {
+		if c.UserID == userID {
+			if c.TrySend(msg) {
+				sent++
+			}
+		}
+	}
+	if h.logger != nil {
+		h.logger.Debug("broadcast_user", "user_id", userID, "channel", channel, "event", event, "sent", sent)
+	}
+}
+
 // BroadcastAll — kirim event ke SEMUA client (untuk perubahan global).
 func (h *Hub) BroadcastAll(event string) {
 	h.mu.Lock()

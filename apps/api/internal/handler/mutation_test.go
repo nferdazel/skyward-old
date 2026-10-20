@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"skyward-api/internal/auth"
+	"skyward-api/internal/engine"
 	"skyward-api/internal/middleware"
 )
 
@@ -34,5 +35,46 @@ func TestBankRepayLoan_RejectsMalformedBody(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body rusak tidak boleh jadi pelunasan penuh)", w.Code)
+	}
+}
+
+type spyBroadcaster struct {
+	broadcastCalled     bool
+	broadcastUserCalled bool
+	lastUserID          string
+	lastChannel         string
+	lastEvent           string
+}
+
+func (s *spyBroadcaster) Broadcast(channel, event string) {
+	s.broadcastCalled = true
+	s.lastChannel = channel
+	s.lastEvent = event
+}
+
+func (s *spyBroadcaster) BroadcastUser(userID, channel, event string) {
+	s.broadcastUserCalled = true
+	s.lastUserID = userID
+	s.lastChannel = channel
+	s.lastEvent = event
+}
+
+func (s *spyBroadcaster) BroadcastAll(event string) {}
+
+func TestMutationHandler_BroadcastsToSpecificUser(t *testing.T) {
+	spy := &spyBroadcaster{}
+	h := &MutationHandler{Hub: spy}
+
+	res := &engine.MutationResult{Success: true}
+	h.broadcastOnSuccess("user-42", "fleet_aircraft", "INSERT", res)
+
+	if !spy.broadcastUserCalled {
+		t.Fatalf("expected BroadcastUser to be called, got none")
+	}
+	if spy.broadcastCalled {
+		t.Fatalf("did not expect global Broadcast to be called when userID is present")
+	}
+	if spy.lastUserID != "user-42" || spy.lastChannel != "fleet_aircraft" || spy.lastEvent != "INSERT" {
+		t.Fatalf("unexpected call args: uid=%s, ch=%s, ev=%s", spy.lastUserID, spy.lastChannel, spy.lastEvent)
 	}
 }

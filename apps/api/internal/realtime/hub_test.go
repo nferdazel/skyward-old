@@ -63,3 +63,34 @@ func TestHubConcurrentSubscribeUnregister(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestHubBroadcastUser(t *testing.T) {
+	hub := NewHub(nil)
+	u1Client := NewClient(hub, "u1")
+	u2Client := NewClient(hub, "u2")
+
+	hub.Register(u1Client)
+	hub.Register(u2Client)
+
+	hub.Subscribe(u1Client, "fleet_aircraft")
+	hub.Subscribe(u2Client, "fleet_aircraft")
+
+	// BroadcastUser target u1 only
+	hub.BroadcastUser("u1", "fleet_aircraft", "INSERT")
+
+	select {
+	case msg := <-u1Client.Send:
+		if len(msg) == 0 {
+			t.Fatalf("expected non-empty message for u1")
+		}
+	default:
+		t.Fatalf("expected u1 to receive broadcast")
+	}
+
+	select {
+	case <-u2Client.Send:
+		t.Fatalf("u2 should not receive user-scoped broadcast for u1")
+	default:
+		// expected: no message for u2
+	}
+}

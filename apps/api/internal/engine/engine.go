@@ -69,6 +69,7 @@ func (e *Engine) log() *slog.Logger {
 // Broadcaster — interface broadcast (diimplementasi realtime.Hub).
 type Broadcaster interface {
 	Broadcast(channel, event string)
+	BroadcastUser(userID, channel, event string)
 	BroadcastAll(event string)
 }
 

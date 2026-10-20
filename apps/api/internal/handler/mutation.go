@@ -24,23 +24,32 @@ type MutationHandler struct {
 }
 
 // broadcastOnSuccess — realtime notification setelah mutasi sukses.
-func (h *MutationHandler) broadcastOnSuccess(channel, event string, res *engine.MutationResult) {
+// Jika userID diberikan, broadcast hanya dikirimkan ke subscriber milik user tersebut (SEC-03).
+func (h *MutationHandler) broadcastOnSuccess(userID, channel, event string, res *engine.MutationResult) {
 	if res != nil && res.Success && h.Hub != nil {
-		h.Hub.Broadcast(channel, event)
+		if userID != "" {
+			h.Hub.BroadcastUser(userID, channel, event)
+		} else {
+			h.Hub.Broadcast(channel, event)
+		}
 	}
 }
 
 func (h *MutationHandler) respond(w http.ResponseWriter, res *engine.MutationResult) {
-	h.respondChannel(w, res, "", "")
+	h.respondUserChannel(w, "", res, "", "")
 }
 
 func (h *MutationHandler) respondChannel(w http.ResponseWriter, res *engine.MutationResult, channel, event string) {
+	h.respondUserChannel(w, "", res, channel, event)
+}
+
+func (h *MutationHandler) respondUserChannel(w http.ResponseWriter, userID string, res *engine.MutationResult, channel, event string) {
 	if res == nil {
 		httperr.WriteError(w, nil, httperr.Internal("mutation failed"))
 		return
 	}
 	if res.Success {
-		h.broadcastOnSuccess(channel, event, res)
+		h.broadcastOnSuccess(userID, channel, event, res)
 	}
 	status := http.StatusOK
 	if !res.Success {
@@ -75,6 +84,7 @@ func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 // BankTakeLoan), dan itu bukan bentuk yang sama.
 func (h *MutationHandler) runMutation(
 	w http.ResponseWriter,
+	uid string,
 	res *engine.MutationResult,
 	err error,
 	failureMessage, channel, event string,
@@ -83,7 +93,7 @@ func (h *MutationHandler) runMutation(
 		httperr.WriteError(w, nil, httperr.Internal(failureMessage))
 		return
 	}
-	h.respondChannel(w, res, channel, event)
+	h.respondUserChannel(w, uid, res, channel, event)
 }
 
 // ── Fleet ─────────────────────────────────────────────────────────────
@@ -98,7 +108,7 @@ func (h *MutationHandler) FleetPurchase(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	res, err := h.Engine.Fleet.Purchase(r.Context(), uid, p)
-	h.runMutation(w, res, err, "fleet purchase failed", "fleet_aircraft", "INSERT")
+	h.runMutation(w, uid, res, err, "fleet purchase failed", "fleet_aircraft", "INSERT")
 }
 
 func (h *MutationHandler) FleetSell(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +117,7 @@ func (h *MutationHandler) FleetSell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.Engine.Fleet.Sell(r.Context(), uid, r.PathValue("id"))
-	h.runMutation(w, res, err, "fleet sell failed", "fleet_aircraft", "DELETE")
+	h.runMutation(w, uid, res, err, "fleet sell failed", "fleet_aircraft", "DELETE")
 }
 
 func (h *MutationHandler) FleetRepair(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +126,7 @@ func (h *MutationHandler) FleetRepair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.Engine.Fleet.Repair(r.Context(), uid, r.PathValue("id"))
-	h.runMutation(w, res, err, "fleet repair failed", "fleet_aircraft", "UPDATE")
+	h.runMutation(w, uid, res, err, "fleet repair failed", "fleet_aircraft", "UPDATE")
 }
 
 func (h *MutationHandler) FleetConfigureSeats(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +143,7 @@ func (h *MutationHandler) FleetConfigureSeats(w http.ResponseWriter, r *http.Req
 		return
 	}
 	res, err := h.Engine.Fleet.ConfigureSeats(r.Context(), uid, r.PathValue("id"), p.EconomySeats, p.BusinessSeats, p.FirstClassSeats)
-	h.runMutation(w, res, err, "configure seats failed", "fleet_aircraft", "UPDATE")
+	h.runMutation(w, uid, res, err, "configure seats failed", "fleet_aircraft", "UPDATE")
 }
 
 // ── Routes ────────────────────────────────────────────────────────────
@@ -148,7 +158,7 @@ func (h *MutationHandler) RouteCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.Engine.Routes.Create(r.Context(), uid, p)
-	h.runMutation(w, res, err, "create route failed", "route_assignments", "INSERT")
+	h.runMutation(w, uid, res, err, "create route failed", "route_assignments", "INSERT")
 }
 
 func (h *MutationHandler) RouteDelete(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +167,7 @@ func (h *MutationHandler) RouteDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.Engine.Routes.Delete(r.Context(), uid, r.PathValue("id"))
-	h.runMutation(w, res, err, "delete route failed", "route_assignments", "DELETE")
+	h.runMutation(w, uid, res, err, "delete route failed", "route_assignments", "DELETE")
 }
 
 // ── Settings ──────────────────────────────────────────────────────────
@@ -172,7 +182,7 @@ func (h *MutationHandler) SettingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.Engine.Settings.Save(r.Context(), uid, p)
-	h.runMutation(w, res, err, "save settings failed", "users", "UPDATE")
+	h.runMutation(w, uid, res, err, "save settings failed", "users", "UPDATE")
 }
 
 func (h *MutationHandler) SettingsReset(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +191,7 @@ func (h *MutationHandler) SettingsReset(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	res, err := h.Engine.Settings.Reset(r.Context(), uid)
-	h.runMutation(w, res, err, "reset settings failed", "users", "UPDATE")
+	h.runMutation(w, uid, res, err, "reset settings failed", "users", "UPDATE")
 }
 
 func (h *MutationHandler) AccountDelete(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +225,7 @@ func (h *MutationHandler) BankTakeLoan(w http.ResponseWriter, r *http.Request) {
 		httperr.WriteError(w, nil, httperr.Wrap(httperr.CodeInternal, "take loan failed", err))
 		return
 	}
-	h.respondChannel(w, res, "loans", "INSERT")
+	h.respondUserChannel(w, uid, res, "loans", "INSERT")
 }
 
 func (h *MutationHandler) BankRepayLoan(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +250,7 @@ func (h *MutationHandler) BankRepayLoan(w http.ResponseWriter, r *http.Request) 
 		httperr.WriteError(w, nil, httperr.Wrap(httperr.CodeInternal, "repay loan failed", err))
 		return
 	}
-	h.respondChannel(w, res, "loans", "UPDATE")
+	h.respondUserChannel(w, uid, res, "loans", "UPDATE")
 }
 
 // ── Fleet (lanjutan) ──────────────────────────────────────────────────
@@ -255,7 +265,7 @@ func (h *MutationHandler) FleetLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.Engine.Fleet.Lease(r.Context(), uid, p)
-	h.runMutation(w, res, err, "lease aircraft failed", "fleet_aircraft", "INSERT")
+	h.runMutation(w, uid, res, err, "lease aircraft failed", "fleet_aircraft", "INSERT")
 }
 
 func (h *MutationHandler) FleetTerminateLease(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +274,7 @@ func (h *MutationHandler) FleetTerminateLease(w http.ResponseWriter, r *http.Req
 		return
 	}
 	res, err := h.Engine.Fleet.TerminateLease(r.Context(), uid, r.PathValue("id"))
-	h.runMutation(w, res, err, "terminate lease failed", "fleet_aircraft", "DELETE")
+	h.runMutation(w, uid, res, err, "terminate lease failed", "fleet_aircraft", "DELETE")
 }
 
 // ── Routes (lanjutan) ─────────────────────────────────────────────────
@@ -281,7 +291,7 @@ func (h *MutationHandler) RouteAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.Engine.Routes.Assign(r.Context(), uid, r.PathValue("id"), p.AircraftID)
-	h.runMutation(w, res, err, "route assign failed", "route_assignments", "UPDATE")
+	h.runMutation(w, uid, res, err, "route assign failed", "route_assignments", "UPDATE")
 }
 
 func (h *MutationHandler) RouteUpdateFreqPrice(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +307,7 @@ func (h *MutationHandler) RouteUpdateFreqPrice(w http.ResponseWriter, r *http.Re
 		return
 	}
 	res, err := h.Engine.Routes.UpdateFreqPrice(r.Context(), uid, r.PathValue("id"), p.TicketPrice, p.FlightsPerWeek)
-	h.runMutation(w, res, err, "update route failed", "route_assignments", "UPDATE")
+	h.runMutation(w, uid, res, err, "update route failed", "route_assignments", "UPDATE")
 }
 
 // ── Bank (lanjutan) ───────────────────────────────────────────────────
@@ -314,7 +324,7 @@ func (h *MutationHandler) BankRefinanceLoan(w http.ResponseWriter, r *http.Reque
 		httperr.WriteError(w, nil, httperr.Wrap(httperr.CodeInternal, "refinance loan failed", err))
 		return
 	}
-	h.respondChannel(w, res, "loans", "UPDATE")
+	h.respondUserChannel(w, uid, res, "loans", "UPDATE")
 }
 
 func (h *MutationHandler) BankFinanceAircraft(w http.ResponseWriter, r *http.Request) {
@@ -333,7 +343,7 @@ func (h *MutationHandler) BankFinanceAircraft(w http.ResponseWriter, r *http.Req
 		httperr.WriteError(w, nil, httperr.Wrap(httperr.CodeInternal, "finance aircraft failed", err))
 		return
 	}
-	h.respondChannel(w, res, "loans", "INSERT")
+	h.respondUserChannel(w, uid, res, "loans", "INSERT")
 }
 
 // ── Simulation sync & onboarding ───────────────────────────────────────
