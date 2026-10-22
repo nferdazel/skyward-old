@@ -44,8 +44,8 @@ wait_healthy() {
 log "Deploy trigger received for: $REPO ref=$REF"
 
 # Fail-closed: hanya deploy untuk push ke branch main
-if [ -n "$REF" ] && [ "$REF" != "refs/heads/main" ]; then
-  log "==> skip: ref=$REF (bukan main)"
+if [ "$REF" != "refs/heads/main" ]; then
+  log "==> skip: ref=${REF:-<kosong>} (bukan refs/heads/main)"
   exit 0
 fi
 
