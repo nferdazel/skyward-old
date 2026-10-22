@@ -1,7 +1,7 @@
 # CI skyward — check, lint, test, build (api + web).
 #
 # Hanya verifikasi. Build & deploy dilakukan DI VPS lewat webhook
-# (lihat deploy/README.md), sama seperti project Qouver lain.
+# (lihat ops/README.md), sama seperti project Qouver lain.
 # Tanpa registry, tanpa secrets GitHub.
 
 name: CI
@@ -9,7 +9,13 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -22,15 +28,16 @@ jobs:
   api:
     name: API (Go)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v5
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
@@ -43,9 +50,12 @@ jobs:
 
       - name: gofmt (berkas yang berubah)
         working-directory: .
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_BEFORE: ${{ github.event.before }}
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then base="${{ github.event.before }}"; fi
+          base="$PR_BASE_SHA"
+          if [ -z "$base" ]; then base="$EVENT_BEFORE"; fi
           if [ -z "$base" ] \
             || [ "$base" = "0000000000000000000000000000000000000000" ] \
             || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
@@ -67,6 +77,7 @@ jobs:
   db-tests:
     name: API (Go) dengan Postgres
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
@@ -85,14 +96,13 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # Menyalakan test DB (`*_db_test.go`) yang kalau tidak diset akan di-skip.
       TEST_DATABASE_URL: postgres://skyward:skyward@localhost:5432/skyward_test?sslmode=disable
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v5
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
@@ -102,11 +112,6 @@ jobs:
         env:
           PGPASSWORD: skyward
         run: |
-          # Baseline adalah dump Supabase yang mengasumsikan role `postgres`
-          # sudah ada (OWNER TO "postgres"). Image postgres resmi hanya membuat
-          # role sesuai POSTGRES_USER (di sini `skyward`). Migrasi
-          # 22_role_provisioning.sql membuat role ini, tapi ia butuh tabel dari
-          # baseline — jadi role dibuat lebih dulu di sini (cermin prod).
           psql -v ON_ERROR_STOP=1 -h localhost -U skyward -d skyward_test \
             -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='postgres') THEN CREATE ROLE postgres NOLOGIN; END IF; END \$\$;"
           for f in $(ls migrations/*.sql | sort); do
@@ -114,32 +119,28 @@ jobs:
             psql -v ON_ERROR_STOP=1 -h localhost -U skyward -d skyward_test -f "$f" >/dev/null
           done
 
-      # -p 1 WAJIB di sini: semua paket memakai satu database yang sama, sedangkan
-      # `CreateUser` menaruh pemain baru di season aktif sehingga mereka diproses
-      # `WorldTick` (engine) — sementara paket `handler` membuat/menghapus user di
-      # DB yang sama. Tanpa serialisasi, tick bisa memproses user yang baru saja
-      # dihapus (status tick jadi 'degraded') → flake.
       - name: go test ./... (-p 1, DB bersama)
         run: go test -p 1 ./...
 
   web:
     name: Web (check + lint + test + build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/web
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
-          # Disamakan dengan VPS (node 24) dan mesin dev: CI harus membangun
-          # dengan runtime yang sama seperti produksi, bukan versi lain.
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
@@ -160,16 +161,17 @@ jobs:
       - name: Build
         run: pnpm build
 
-  secrets:
-    name: Secret scan (gitleaks)
+  security:
+    name: Security (gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
