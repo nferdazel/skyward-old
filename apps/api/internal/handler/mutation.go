@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"skyward-api/internal/auth"
 	"skyward-api/internal/engine"
 	"skyward-api/internal/httperr"
 	"skyward-api/internal/store"
@@ -204,6 +205,7 @@ func (h *MutationHandler) AccountDelete(w http.ResponseWriter, r *http.Request) 
 		httperr.WriteError(w, nil, httperr.Internal("delete account failed"))
 		return
 	}
+	auth.RevokeUserTokens(uid)
 	httperr.WriteJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 

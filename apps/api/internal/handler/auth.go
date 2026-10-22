@@ -392,6 +392,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		httperr.WriteError(w, nil, httperr.Internal("reset password failed"))
 		return
 	}
+	auth.RevokeUserTokens(u.ID)
 
 	httperr.WriteJSON(w, http.StatusOK, map[string]bool{"success": true})
 }

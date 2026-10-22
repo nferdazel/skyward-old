@@ -70,6 +70,7 @@ func ResetPassword(st *store.Store) http.HandlerFunc {
 			httperr.WriteError(w, nil, httperr.Internal("reset password failed"))
 			return
 		}
+		auth.RevokeUserTokens(r.PathValue("id"))
 		httperr.WriteJSON(w, http.StatusOK, map[string]bool{"success": true})
 	}
 }

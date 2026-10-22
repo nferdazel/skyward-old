@@ -96,12 +96,13 @@ func main() {
 	mux := http.NewServeMux()
 	registerRoutes(ctx, mux, logger, cfg, pool, st, wk, hub, eng)
 
-	// Middleware chain: recover (luar) → request-id → logging → CORS → rate limit → mux.
+	// Middleware chain: recover (luar) → security headers → request-id → logging → CORS → rate limit → mux.
 	var h http.Handler = mux
 	h = middleware.RateLimit(ctx, cfg.RateLimitPerMin, logger)(h)
 	h = middleware.CORS(cfg.AllowedOrigins)(h)
 	h = middleware.Logging(logger)(h)
 	h = middleware.RequestID(h)
+	h = middleware.SecurityHeaders(h)
 	h = middleware.Recover(logger)(h)
 
 	srv := &http.Server{

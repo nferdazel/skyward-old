@@ -112,3 +112,67 @@ func TestVerifyRejectsMalformedHash(t *testing.T) {
 		t.Fatal("hash format salah harus error")
 	}
 }
+
+func TestTokenVersioningAndRevocation(t *testing.T) {
+	ResetRevocationsForTest()
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	userID := "user-revocation-test-123"
+
+	// Initial version should be 1
+	if v := CurrentTokenVersion(userID); v != 1 {
+		t.Fatalf("expected version 1, got %d", v)
+	}
+
+	// Sign initial token
+	tok1, err := Sign(Claims{Sub: userID, Username: "test"}, secret)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	parsed1, err := Parse(tok1, secret)
+	if err != nil {
+		t.Fatalf("Parse tok1: %v", err)
+	}
+	if parsed1.TokenVersion != 1 {
+		t.Fatalf("expected tok1 version 1, got %d", parsed1.TokenVersion)
+	}
+	if IsRevoked(parsed1) {
+		t.Fatal("parsed1 should not be revoked initially")
+	}
+
+	// Revoke user tokens
+	RevokeUserTokens(userID)
+
+	if v := CurrentTokenVersion(userID); v != 2 {
+		t.Fatalf("expected version 2 after revocation, got %d", v)
+	}
+	if !IsRevoked(parsed1) {
+		t.Fatal("parsed1 should be revoked after RevokeUserTokens")
+	}
+
+	// Sign new token after revocation
+	tok2, err := Sign(Claims{Sub: userID, Username: "test"}, secret)
+	if err != nil {
+		t.Fatalf("Sign tok2: %v", err)
+	}
+	parsed2, err := Parse(tok2, secret)
+	if err != nil {
+		t.Fatalf("Parse tok2: %v", err)
+	}
+	if parsed2.TokenVersion != 2 {
+		t.Fatalf("expected tok2 version 2, got %d", parsed2.TokenVersion)
+	}
+	if IsRevoked(parsed2) {
+		t.Fatal("parsed2 should be valid after revocation")
+	}
+}
+
+func TestParseRejectsNonPositiveExp(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	token, err := Sign(Claims{Sub: "a", Exp: -1}, secret)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if _, err := Parse(token, secret); err == nil {
+		t.Fatal("token with non-positive exp must be rejected")
+	}
+}

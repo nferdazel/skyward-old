@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/argon2"
@@ -75,10 +76,87 @@ func VerifyPassword(password, encoded string) (bool, error) {
 
 // Claims — klaim JWT minimal untuk Skyward.
 type Claims struct {
-	Sub      string `json:"sub"`      // public.users.id
-	Username string `json:"username"` // display / name
-	Exp      int64  `json:"exp"`      // expiry unix timestamp
-	Iat      int64  `json:"iat"`      // issued at
+	Sub          string `json:"sub"`                      // public.users.id
+	Username     string `json:"username"`                 // display / name
+	Exp          int64  `json:"exp"`                      // expiry unix timestamp
+	Iat          int64  `json:"iat"`                      // issued at
+	TokenVersion int    `json:"token_version,omitempty"` // session token version
+}
+
+var (
+	revocationMu      sync.RWMutex
+	userTokenVersions = make(map[string]int)
+	revokedBefore     = make(map[string]int64)
+)
+
+// CurrentTokenVersion — versi token aktif untuk user_id (default: 1).
+func CurrentTokenVersion(userID string) int {
+	revocationMu.RLock()
+	defer revocationMu.RUnlock()
+	v, ok := userTokenVersions[userID]
+	if !ok {
+		return 1
+	}
+	return v
+}
+
+// RevokeUserTokens — batalkan seluruh token aktif milik userID (mis. saat reset password atau hapus akun).
+// Menaikkan token_version dan mencatat cutoff timestamp (SEC-02).
+func RevokeUserTokens(userID string) {
+	if userID == "" {
+		return
+	}
+	revocationMu.Lock()
+	defer revocationMu.Unlock()
+	current := userTokenVersions[userID]
+	if current == 0 {
+		current = 1
+	}
+	userTokenVersions[userID] = current + 1
+	now := time.Now().Unix()
+	revokedBefore[userID] = now
+
+	// Prune entri lama jika map berkembang melebihi ambang
+	if len(revokedBefore) > 1000 {
+		cutoff := now - 24*3600 // token berlaku maks 24 jam
+		for id, t := range revokedBefore {
+			if t < cutoff {
+				delete(revokedBefore, id)
+			}
+		}
+	}
+}
+
+// IsRevoked — periksa apakah token/klaim sudah dibatalkan (revoked).
+func IsRevoked(claims *Claims) bool {
+	if claims == nil || claims.Sub == "" {
+		return true
+	}
+	revocationMu.RLock()
+	defer revocationMu.RUnlock()
+
+	// 1. Cek token_version jika diset pada klaim
+	if claims.TokenVersion > 0 {
+		if expectedVer, exists := userTokenVersions[claims.Sub]; exists {
+			return claims.TokenVersion < expectedVer
+		}
+		return false
+	}
+
+	// 2. Fallback untuk token tanpa token_version: cek cutoff timestamp
+	if cutoff, exists := revokedBefore[claims.Sub]; exists {
+		return claims.Iat <= cutoff
+	}
+
+	return false
+}
+
+// ResetRevocationsForTest — reset state revokasi (khusus untuk testing).
+func ResetRevocationsForTest() {
+	revocationMu.Lock()
+	defer revocationMu.Unlock()
+	userTokenVersions = make(map[string]int)
+	revokedBefore = make(map[string]int64)
 }
 
 // Sign — buat JWT HS256 dari claims + secret.
@@ -90,6 +168,9 @@ func Sign(claims Claims, secret []byte) (string, error) {
 	claims.Iat = time.Now().Unix()
 	if claims.Exp == 0 {
 		claims.Exp = time.Now().Add(24 * time.Hour).Unix()
+	}
+	if claims.TokenVersion == 0 && claims.Sub != "" {
+		claims.TokenVersion = CurrentTokenVersion(claims.Sub)
 	}
 	payload, err := json.Marshal(claims)
 	if err != nil {
@@ -126,7 +207,7 @@ func Parse(token string, secret []byte) (*Claims, error) {
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
 		return nil, fmt.Errorf("jwt: parse claims: %w", err)
 	}
-	if claims.Exp > 0 && time.Now().Unix() > claims.Exp {
+	if claims.Exp <= 0 || time.Now().Unix() > claims.Exp {
 		return nil, fmt.Errorf("jwt: expired")
 	}
 	return &claims, nil

@@ -41,8 +41,19 @@ func (b *BankService) TakeLoan(ctx context.Context, userID string, p TakeLoanPar
 	}
 
 	result, err := withTx(ctx, b.engine.Pool, func(tx pgx.Tx) (*MutationResult, bool, error) {
+		// Row-level lock pada operating account untuk serialisasi loan request per-user
+		// dan mencegah race condition pada aggregate active loans / plafon (SKY-SEC-02).
+		var opAccID string
+		err := tx.QueryRow(ctx, `SELECT id FROM bank_accounts WHERE user_id = $1 AND account_type = 'operating' FOR UPDATE`, userID).Scan(&opAccID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return &MutationResult{Success: false, Message: "Operating account not found."}, true, nil
+			}
+			return nil, false, fmt.Errorf("take loan: lock operating account: %w", err)
+		}
+
 		var maxActive int
-		err := tx.QueryRow(ctx, `SELECT COALESCE((value#>>'{max_active_loans}')::int, 3) FROM game_config WHERE key='credit_tier_config'`).Scan(&maxActive)
+		err = tx.QueryRow(ctx, `SELECT COALESCE((value#>>'{max_active_loans}')::int, 3) FROM game_config WHERE key='credit_tier_config'`).Scan(&maxActive)
 		if err != nil {
 			maxActive = 3
 		}

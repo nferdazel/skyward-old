@@ -37,6 +37,10 @@ func AuthGuard(secret []byte, next http.HandlerFunc) http.HandlerFunc {
 			httperr.WriteError(w, nil, httperr.Unauthorized("token missing sub claim"))
 			return
 		}
+		if auth.IsRevoked(tok) {
+			httperr.WriteError(w, nil, httperr.Unauthorized("session has been invalidated"))
+			return
+		}
 		ctx := context.WithValue(r.Context(), ctxKeyUserID{}, tok.Sub)
 		next(w, r.WithContext(ctx))
 	}
