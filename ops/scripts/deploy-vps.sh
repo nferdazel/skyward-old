@@ -49,6 +49,13 @@ if [ -n "$REF" ] && [ "$REF" != "refs/heads/main" ]; then
   exit 0
 fi
 
+# Concurrency lock: satu deploy pada satu waktu
+exec 9>"$APP_DIR/.deploy.lock"
+if ! flock -n 9; then
+  log "==> deploy lain sedang berjalan; keluar tanpa menunggu"
+  exit 0
+fi
+
 # URL clone repo (dari env VPS, mode 600). Contoh:
 #   SKYWARD_GIT_URL=github-skyward:<user>/skyward.git
 # Tidak di-hardcode supaya username tidak terekspos di repo publik.
