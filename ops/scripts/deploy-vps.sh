@@ -89,7 +89,7 @@ fi
 # unexpected token" dan deploy mati sebelum mengerjakan apa pun. Terjadi
 # 2026-10-12, tepat pada deploy pertama setelah script ini berubah. Rename
 # membuat FD bash tetap menunjuk inode lama, sehingga aman.
-REPO_SCRIPT="$MONO_DIR/deploy/deploy-vps.sh"
+REPO_SCRIPT="$MONO_DIR/ops/scripts/deploy-vps.sh"
 SELF_SCRIPT="$APP_DIR/scripts/deploy-vps.sh"
 if [ -f "$REPO_SCRIPT" ] && ! cmp -s "$REPO_SCRIPT" "$SELF_SCRIPT"; then
   if cp -f "$REPO_SCRIPT" "$SELF_SCRIPT.new" && chmod +x "$SELF_SCRIPT.new"; then
@@ -102,7 +102,7 @@ fi
 
 # Self-update: samakan quadlet di server dengan versi repo.
 UNIT_DIR="$HOME/.config/containers/systemd"
-REPO_UNIT="$MONO_DIR/deploy/skyward-api.container"
+REPO_UNIT="$MONO_DIR/ops/systemd/skyward-api.container"
 LIVE_UNIT="$UNIT_DIR/skyward-api.container"
 UNIT_CHANGED=0
 mkdir -p "$UNIT_DIR"
