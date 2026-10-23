@@ -1,16 +1,16 @@
 #!/usr/bin/env sh
 #
-# SKYWARD - Satu pintu perintah monorepo (arsitektur selaras dengan cbs/kran).
+# SKYWARD — single entry point monorepo task runner (aligned with modular monorepo spec).
 #
 #   ./task check              go vet + svelte-check + lint
 #   ./task test               go test -race + vitest unit
-#   ./task build              bangun binary Go (apps/api) + static client (apps/web)
-#   ./task db:migrate         jalankan migrasi SQL (scripts/migrate.sh)
-#   ./task db:drift           cek drift skema database (scripts/drift-check.sh)
-#   ./task db:tunnel [cmd]    kelola SSH tunnel DB test di VPS (up|down|status)
+#   ./task build              build Go binary (apps/api) + static client (apps/web)
+#   ./task db:migrate         run SQL migrations (scripts/migrate.sh)
+#   ./task db:drift           check database schema drift (scripts/drift-check.sh)
+#   ./task db:tunnel [cmd]    manage VPS DB test SSH tunnel (up|down|status)
 #   ./task help
 #
-# Skrip POSIX murni tanpa dependensi eksternal (D-001).
+# Pure POSIX script without external tooling dependencies.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -29,63 +29,63 @@ LOCAL_DB_PORT="15432"
 log()  { printf '\n== %s\n' "$*"; }
 info() { printf '   %s\n' "$*"; }
 ok()   { printf '   ok: %s\n' "$*"; }
-die()  { printf '\n!! GAGAL: %s\n' "$*" >&2; exit 1; }
+die()  { printf '\n!! FAILED: %s\n' "$*" >&2; exit 1; }
 
 task_check() {
-  log "Menjalankan static check & linter monorepo"
+  log "Running monorepo static checks & linters"
   
   info "1. Backend Go vet..."
-  (cd "$ROOT/apps/api" && go vet ./...) || die "go vet gagal"
-  ok "Go vet bersih"
+  (cd "$ROOT/apps/api" && go vet ./...) || die "go vet failed"
+  ok "Go vet clean"
 
   info "2. Frontend Svelte check..."
-  pnpm --filter skyward-web check || die "svelte-check gagal"
-  ok "Svelte check bersih"
+  pnpm --filter skyward-web check || die "svelte-check failed"
+  ok "Svelte check clean"
 
   if command -v gitleaks >/dev/null 2>&1; then
     info "3. Secret leak scan (gitleaks)..."
     gitleaks protect --staged --verbose 2>/dev/null || gitleaks detect --no-git 2>/dev/null || true
-    ok "Gitleaks scan selesai"
+    ok "Gitleaks scan complete"
   fi
 
-  ok "Seluruh pengecekan monorepo lulus!"
+  ok "All monorepo static checks passed!"
 }
 
 task_test() {
-  log "Menjalankan test suite monorepo"
+  log "Running monorepo test suite"
   
   info "1. Backend unit tests (race detector)..."
-  (cd "$ROOT/apps/api" && go test -race ./...) || die "go test gagal"
-  ok "Backend Go tests lulus"
+  (cd "$ROOT/apps/api" && go test -race ./...) || die "go test failed"
+  ok "Backend Go tests passed"
 
   info "2. Frontend web tests (vitest)..."
-  pnpm --filter skyward-web test || die "web tests gagal"
-  ok "Frontend web tests lulus"
+  pnpm --filter skyward-web test || die "web tests failed"
+  ok "Frontend web tests passed"
 
-  ok "Semua unit test monorepo lulus!"
+  ok "All monorepo unit tests passed!"
 }
 
 task_build() {
-  log "Membangun artefak biner dan static web"
+  log "Building binary and static web artifacts"
   
   info "1. Backend skyward-api..."
-  (cd "$ROOT/apps/api" && go build -o "$BIN/skyward-api" ./cmd/server) || die "build skyward-api gagal"
-  ok "Binary dibangun: .build/bin/skyward-api"
+  (cd "$ROOT/apps/api" && go build -o "$BIN/skyward-api" ./cmd/server) || die "build skyward-api failed"
+  ok "Binary built: .build/bin/skyward-api"
 
   info "2. Frontend skyward-web..."
-  pnpm --filter skyward-web build || die "build web gagal"
-  ok "Web static dibangun: apps/web/build"
+  pnpm --filter skyward-web build || die "build web failed"
+  ok "Static web built: apps/web/build"
 
-  ok "Seluruh build selesai dengan sukses!"
+  ok "All builds completed successfully!"
 }
 
 task_db_migrate() {
-  log "Menjalankan migrasi database"
+  log "Running database migrations"
   "$ROOT/scripts/migrate.sh" "$@"
 }
 
 task_db_drift() {
-  log "Memeriksa drift skema database"
+  log "Checking database schema drift"
   "$ROOT/scripts/drift-check.sh" "$@"
 }
 
@@ -94,49 +94,49 @@ task_db_tunnel() {
   case "$subcmd" in
     up|start)
       if [ -S "$TUNNEL_SOCKET" ] && ssh -S "$TUNNEL_SOCKET" -O check "$VPS_HOST" 2>/dev/null; then
-        info "Tunnel SSH sudah aktif pada port 127.0.0.1:$LOCAL_DB_PORT"
+        info "SSH tunnel is already active on port 127.0.0.1:$LOCAL_DB_PORT"
         return 0
       fi
-      log "Membuka SSH tunnel ke VPS ($VPS_HOST) untuk PostgreSQL port $LOCAL_DB_PORT -> 5432..."
-      ssh -M -S "$TUNNEL_SOCKET" -f -N -L "$LOCAL_DB_PORT:127.0.0.1:5432" "$VPS_USER@$VPS_HOST" || die "Gagal membuka tunnel SSH"
-      info "Gunakan port $LOCAL_DB_PORT untuk TEST_DATABASE_URL (lihat ARCHITECTURE.md)"
+      log "Opening SSH tunnel to VPS ($VPS_HOST) for PostgreSQL port $LOCAL_DB_PORT -> 5432..."
+      ssh -M -S "$TUNNEL_SOCKET" -f -N -L "$LOCAL_DB_PORT:127.0.0.1:5432" "$VPS_USER@$VPS_HOST" || die "Failed to open SSH tunnel"
+      info "Use port $LOCAL_DB_PORT for TEST_DATABASE_URL (see ARCHITECTURE.md)"
       ;;
     down|stop)
-      log "Menutup SSH tunnel..."
+      log "Closing SSH tunnel..."
       if [ -S "$TUNNEL_SOCKET" ]; then
         ssh -S "$TUNNEL_SOCKET" -O exit "$VPS_HOST" 2>/dev/null || true
         rm -f "$TUNNEL_SOCKET"
-        ok "Tunnel SSH ditutup"
+        ok "SSH tunnel closed"
       else
-        info "Tidak ada tunnel aktif"
+        info "No active tunnel found"
       fi
       ;;
     status)
       if [ -S "$TUNNEL_SOCKET" ] && ssh -S "$TUNNEL_SOCKET" -O check "$VPS_HOST" 2>/dev/null; then
-        ok "Tunnel SSH aktif (127.0.0.1:$LOCAL_DB_PORT -> VPS:5432)"
+        ok "SSH tunnel active (127.0.0.1:$LOCAL_DB_PORT -> VPS:5432)"
       else
-        info "Tunnel SSH mati / tidak aktif"
+        info "SSH tunnel inactive / down"
       fi
       ;;
     *)
-      die "Penggunaan: ./task db:tunnel [up|down|status]"
+      die "Usage: ./task db:tunnel [up|down|status]"
       ;;
   esac
 }
 
 task_help() {
   cat <<'EOF'
-Skyward Task Runner — satu pintu perintah monorepo
+Skyward Task Runner — single entry point monorepo task runner
 
-Penggunaan:
-  ./task check              Jalankan static checks (go vet, svelte-check)
-  ./task test               Jalankan test suite (go test -race, pnpm test)
-  ./task build              Bangun binary Go dan bundle static SvelteKit
-  ./task db:migrate [arg]   Jalankan migrasi database
-  ./task db:drift           Cek drift skema database
+Usage:
+  ./task check              Run static checks (go vet, svelte-check)
+  ./task test               Run test suite (go test -race, pnpm test)
+  ./task build              Build Go binary and SvelteKit static bundle
+  ./task db:migrate [arg]   Run database migrations
+  ./task db:drift           Check database schema drift
   ./task db:tunnel [up|down|status]
-                            Kelola SSH tunnel port forwarding ke VPS test DB
-  ./task help               Tampilkan bantuan ini
+                            Manage SSH tunnel port forwarding to VPS test DB
+  ./task help               Show this help message
 EOF
 }
 
@@ -151,5 +151,5 @@ case "$cmd" in
   db:drift) task_db_drift "$@" ;;
   db:tunnel) task_db_tunnel "$@" ;;
   help|--help|-h) task_help ;;
-  *) die "Perintah tidak dikenal: $cmd. Ketik './task help' untuk daftar perintah." ;;
+  *) die "Unknown command: $cmd. Run './task help' for available commands." ;;
 esac

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "comment": "Root workspace pnpm. Satu pintu perintah tetap ./task; skrip di sini untuk orkestrasi paket TS.",
+  "comment": "Root workspace pnpm. Single entry point remains ./task; scripts here are for TS package orchestration.",
   "engines": {
     "node": ">=20",
     "pnpm": ">=10"
